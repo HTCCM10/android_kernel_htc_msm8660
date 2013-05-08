@@ -1270,7 +1270,7 @@ CONFIG_BCMDHD_NVRAM_PATH="/proc/calibration"
 # CONFIG_MWIFIEX is not set
 # CONFIG_QUALCOMM_WLAN is not set
 # CONFIG_BCM4329_248 is not set
-
+CONFIG_BCM4329_248=m
 #
 # WiMAX Wireless Broadband devices
 #
