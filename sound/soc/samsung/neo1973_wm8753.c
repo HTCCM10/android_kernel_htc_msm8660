@@ -252,7 +252,7 @@ static int lm4853_get_spk(struct snd_kcontrol *kcontrol,
 }
 
 static int lm4853_event(struct snd_soc_dapm_widget *w,
-			struct snd_kcontrol *k, int event)
+			struct snd_kcontrol *k.codec_name = "wm8753.0-001a", , int event)
 {
 	gpio_set_value(GTA02_GPIO_AMP_SHUT, SND_SOC_DAPM_EVENT_OFF(event));
 
@@ -425,7 +425,7 @@ static struct snd_soc_dai_link neo1973_dai[] = {
 	.platform_name = "samsung-audio",
 	.cpu_dai_name = "s3c24xx-iis",
 	.codec_dai_name = "wm8753-hifi",
-	.codec_name = "wm8753.0-001a",
+	.codec_name = "wm8753.0-001a", 
 	.init = neo1973_wm8753_init,
 	.ops = &neo1973_hifi_ops,
 },

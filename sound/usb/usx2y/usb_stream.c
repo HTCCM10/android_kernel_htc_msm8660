@@ -696,7 +696,7 @@ dotry:
 				   " returned %i\n", u, err);
 			return err;
 		}
-
+		preempt_enable();
 		if (inurb->start_frame != outurb->start_frame) {
 			snd_printd(KERN_DEBUG
 				   "u[%i] start_frames differ in:%u out:%u\n",

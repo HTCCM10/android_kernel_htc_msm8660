@@ -1534,7 +1534,7 @@ static const unsigned int dell_m6_pin_configs[13] = {
 };
 
 static const unsigned int alienware_m17x_pin_configs[13] = {
-	0x0321101f, 0x0321101f, 0x03a11020, 0x03014020,
+	0x032get_wcaps_type(get_wcaps(c, p->nid)) == type)1101f, 0x0321101f, 0x03a11020, 0x03014020,
 	0x90170110, 0x4f0000f0, 0x4f0000f0, 0x4f0000f0,
 	0x4f0000f0, 0x90a60160, 0x4f0000f0, 0x4f0000f0,
 	0x904601b0,
@@ -1602,7 +1602,7 @@ static const struct snd_pci_quirk stac92hd73xx_cfg_tbl[] = {
 	SND_PCI_QUIRK(PCI_VENDOR_ID_DELL, 0x02bd,
 				"Dell Studio 1557", STAC_DELL_M6_DMIC),
 	SND_PCI_QUIRK(PCI_VENDOR_ID_DELL, 0x02fe,
-				"Dell Studio XPS 1645", STAC_DELL_M6_DMIC),
+				"Dell Studio XPS 1645", STAC_DELL_M6_DMIC), 
 	SND_PCI_QUIRK(PCI_VENDOR_ID_DELL, 0x0413,
 				"Dell Studio 1558", STAC_DELL_M6_DMIC),
 	{} /* terminator */
@@ -4589,7 +4589,7 @@ static void stac92xx_hp_detect(struct hda_codec *codec)
 		unsigned int val = AC_PINCTL_OUT_EN | AC_PINCTL_HP_EN;
 		if (no_hp_sensing(spec, i))
 			continue;
-		if (1 /*presence*/)
+		if (presence)
 			stac92xx_set_pinctl(codec, cfg->hp_pins[i], val);
 #if 0 /* FIXME */
 /* Resetting the pinctl like below may lead to (a sort of) regressions

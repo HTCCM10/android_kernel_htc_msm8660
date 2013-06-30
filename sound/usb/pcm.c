@@ -377,6 +377,7 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 						  params_rate(hw_params),
 						  snd_pcm_format_physical_width(params_format(hw_params)) *
 							params_channels(hw_params));
+		mutex_unlock(&subs->stream->chip->shutdown_mutex); 
 	}
 
 unlock:
@@ -687,8 +688,8 @@ static int snd_usb_pcm_check_knot(struct snd_pcm_runtime *runtime,
 	int count = 0, needs_knot = 0;
 	int err;
 
-	kfree(subs->rate_list.list);
-	subs->rate_list.list = NULL;
+        kfree(subs->rate_list.list);
+        subs->rate_list.list = NULL;
 
 	list_for_each_entry(fp, &subs->fmt_list, list) {
 		if (fp->rates & SNDRV_PCM_RATE_CONTINUOUS)

@@ -303,7 +303,7 @@ enum {
 #define AC_AMPCAP_MUTE_SHIFT		31
 
 /* driver-specific amp-caps: using bits 24-30 */
-#define AC_AMPCAP_MIN_MUTE		(1 << 30) /* min-volume = mute */
+#define AC_AMPCAP_MIN_MUTE    (1 << 30) /* min-volume = mute */  
 
 /* Connection list */
 #define AC_CLIST_LENGTH			(0x7f<<0)

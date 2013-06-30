@@ -718,16 +718,32 @@ static int pxa_ssp_trigger(struct snd_pcm_substream *substream, int cmd,
 		pxa_ssp_write_reg(ssp, SSSR, val);
 		break;
 	case SNDRV_PCM_TRIGGER_START:
-		pxa_ssp_set_running_bit(substream, ssp, 1);
+		val = pxa_ssp_read_reg(ssp, SSCR1);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			val |= SSCR1_TSRE;
+		else
+			val |= SSCR1_RSRE;
+		pxa_ssp_write_reg(ssp, SSCR1, val);
+		pxa_ssp_enable(ssp);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
-		pxa_ssp_set_running_bit(substream, ssp, 0);
+		val = pxa_ssp_read_reg(ssp, SSCR1);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			val &= ~SSCR1_TSRE;
+		else
+			val &= ~SSCR1_RSRE;
+		pxa_ssp_write_reg(ssp, SSCR1, val);
 		break;
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 		pxa_ssp_disable(ssp);
 		break;
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		pxa_ssp_set_running_bit(substream, ssp, 0);
+		val = pxa_ssp_read_reg(ssp, SSCR1);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			val &= ~SSCR1_TSRE;
+		else
+			val &= ~SSCR1_RSRE;
+		pxa_ssp_write_reg(ssp, SSCR1, val);
 		break;
 
 	default:
