@@ -1,13 +1,13 @@
 /*
  * arch/arm/mach-msm/msm_mpdecision.c
  *
- * This program features:
- * -cpu auto-hotplug/unplug based on system load for MSM multicore cpus
- * -single core while screen is off
- * -extensive sysfs tuneables
- *
+ * hotplug cores of MSM multicore cpus based on demand and suspend
+ * 
+ * based on the msm_mpdecision code by
  * Copyright (c) 2012-2013, Dennis Rassmann <showp1984@gmail.com>
- * revised by mrg666, 2013, https://github.com/mrg666/android_kernel_shooter
+ *
+ * major revision:
+ * July 2013, https://github.com/mrg666/android_kernel_shooter
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +19,6 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #include <linux/earlysuspend.h>
@@ -34,12 +31,16 @@
 #include <linux/hrtimer.h>
 #include <linux/delay.h>
 #include "acpuclock.h"
+#include <linux/rq_stats.h>
 
-#define MPDEC_TAG                       "[MPDEC]: "
-#define MSM_MPDEC_STARTDELAY            20000
-#define MSM_MPDEC_DELAY                 100
-#define MSM_MPDEC_PAUSE                 10000
-#define MSM_MPDEC_IDLE_FREQ             384000
+#define DEFAULT_RQ_POLL_JIFFIES		1
+#define DEFAULT_DEF_TIMER_JIFFIES	5
+
+#define MPDEC_TAG			"[MPDEC]: "
+#define MSM_MPDEC_STARTDELAY		20000
+#define MSM_MPDEC_DELAY			100
+#define MSM_MPDEC_PAUSE			10000
+#define MSM_MPDEC_IDLE_FREQ		384000
 
 struct global_attr {
 	struct attribute attr;
@@ -87,13 +88,22 @@ static struct msm_mpdec_tuners {
 static unsigned int NwNs_Threshold[4] = {35, 0, 0, 5};
 static unsigned int TwTs_Threshold[4] = {250, 0, 0, 250};
 
-extern unsigned int get_rq_avg(void);
-
 bool was_paused = false;
 static cputime64_t mpdec_paused_until = 0;
 static cputime64_t total_time = 0;
 static cputime64_t last_time;
 static int enabled = 1;
+
+unsigned int get_rq_avg(void) {
+	unsigned long flags = 0;
+	unsigned int rq = 0;
+
+	spin_lock_irqsave(&rq_lock, flags);
+	rq = rq_info.rq_avg;
+	rq_info.rq_avg = 0;
+	spin_unlock_irqrestore(&rq_lock, flags);
+	return rq;
+}
 
 static void mpdec_pause(int cpu) {
 	pr_info(MPDEC_TAG"CPU[%d] bypassed mpdecision! | pausing [%d]ms\n",
@@ -102,6 +112,7 @@ static void mpdec_pause(int cpu) {
 	was_paused = true;
 }
 
+#if CONFIG_NR_CPUS > 2
 static int get_slowest_cpu(void) {
 	int i, cpu = 1;
 	unsigned long rate, slow_rate = 999999999;
@@ -117,6 +128,7 @@ static int get_slowest_cpu(void) {
 	}
 	return cpu;
 }
+#endif
 
 static unsigned long get_slowest_cpu_rate(void) {
 	int cpu;
@@ -161,11 +173,22 @@ static bool mpdec_cpu_up(int cpu) {
 	return ret;
 }
 
+static void rq_work_fn(struct work_struct *work) {
+	int64_t diff, now;
+
+	now = ktime_to_ns(ktime_get());
+	diff = now - rq_info.def_start_time;
+	do_div(diff, 1000 * 1000);
+	rq_info.def_interval = (unsigned int) diff;
+	rq_info.def_timer_jiffies = msecs_to_jiffies(rq_info.def_interval);
+	rq_info.def_start_time = now;
+}
+
 static void msm_mpdec_work_thread(struct work_struct *work) {
-	unsigned int cpu = nr_cpu_ids;
+	unsigned int cpu;
 	int nr_cpu_online;
 	int index;
-	unsigned int rq_depth;
+	unsigned int rq_avg;
 	cputime64_t current_time;
 
 	current_time = ktime_to_ms(ktime_get());
@@ -186,28 +209,33 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 		}
 	}
 
-	rq_depth = get_rq_avg();
+	cpu = 1;
+	rq_avg = get_rq_avg();
 	nr_cpu_online = num_online_cpus();
 	index = (nr_cpu_online - 1) * 2;
 
 	if ((nr_cpu_online < msm_mpdec_tuners_ins.max_cpus) && 
-	    (rq_depth >= NwNs_Threshold[index])) {
+	    (rq_avg >= NwNs_Threshold[index])) {
 		if (total_time >= TwTs_Threshold[index]) {
 			if (get_slowest_cpu_rate() > msm_mpdec_tuners_ins.idle_freq) {
+#if CONFIG_NR_CPUS > 2
 				cpu = cpumask_next_zero(0, cpu_online_mask);
+#endif
 				if (per_cpu(msm_mpdec_cpudata, cpu).online == false) {
 					if (mpdec_cpu_up(cpu))
 						total_time = 0;
 					else
 						mpdec_pause(cpu);
 				}
-			} 
+			}
 		}
 	} else if ((nr_cpu_online > msm_mpdec_tuners_ins.min_cpus) &&
-		   (rq_depth <= NwNs_Threshold[index+1])) {
+		   (rq_avg <= NwNs_Threshold[index+1])) {
 		if (total_time >= TwTs_Threshold[index+1]) {
 			if (get_slowest_cpu_rate() <= msm_mpdec_tuners_ins.idle_freq) {
+#if CONFIG_NR_CPUS > 2
 				cpu = get_slowest_cpu();
+#endif
 				if (per_cpu(msm_mpdec_cpudata, cpu).online == true) {
 					if (mpdec_cpu_down(cpu))
 						total_time = 0;
@@ -216,7 +244,7 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 				}
 			}
 		}
-	}	
+	}
 out:
 	last_time = current_time;
 	if (enabled)
@@ -226,11 +254,13 @@ out:
 }
 
 static void msm_mpdec_early_suspend(struct early_suspend *h) {
-	int cpu;
+	int cpu = 1;
 
 	/* unplug cpu cores */
 	if (msm_mpdec_tuners_ins.scroff_single_core)
+#if CONFIG_NR_CPUS > 2
 		for (cpu = 1; cpu < nr_cpu_ids; cpu++)
+#endif
 			mpdec_cpu_down(cpu);
 
 	/* suspend main work thread */
@@ -241,11 +271,13 @@ static void msm_mpdec_early_suspend(struct early_suspend *h) {
 }
 
 static void msm_mpdec_late_resume(struct early_suspend *h) {
-	int cpu;
+	int cpu = 1;
 
 	/* hotplug cpu cores */
 	if (msm_mpdec_tuners_ins.scroff_single_core)
+#if CONFIG_NR_CPUS > 2
 		for (cpu = 1; cpu < nr_cpu_ids; cpu++)
+#endif
 			mpdec_cpu_up(cpu);
 
 	/* resume main work thread */
@@ -267,7 +299,7 @@ static struct early_suspend msm_mpdec_early_suspend_handler = {
 
 static int set_enabled(const char *val, const struct kernel_param *kp) {
 	int ret = 0;
-	int cpu;
+	int cpu = 1;
 
 	ret = param_set_bool(val, kp);
 	if (enabled) {
@@ -277,7 +309,9 @@ static int set_enabled(const char *val, const struct kernel_param *kp) {
 		pr_info(MPDEC_TAG"msm_mpdecision enabled\n");
 	} else {
 		cancel_delayed_work_sync(&msm_mpdec_work);
+#if CONFIG_NR_CPUS > 2
 		for (cpu = 1; cpu < nr_cpu_ids; cpu++)
+#endif
 			mpdec_cpu_up(cpu);
 		pr_info(MPDEC_TAG"msm_mpdecision disabled\n");
 	}
@@ -291,7 +325,6 @@ static struct kernel_param_ops module_ops = {
 
 module_param_cb(enabled, &module_ops, &enabled, 0644);
 MODULE_PARM_DESC(enabled, "hotplug cpu cores based on demand");
-
 
 /**************************** SYSFS START ****************************/
 struct kobject *msm_mpdec_kobject;
@@ -519,6 +552,18 @@ static struct attribute_group msm_mpdec_stats_attr_group = {
 
 static int __init msm_mpdec_init(void) {
 	int cpu, rc, err = 0;
+
+	rq_wq = create_singlethread_workqueue("rq_stats");
+	BUG_ON(!rq_wq);
+	INIT_WORK(&rq_info.def_timer_work, rq_work_fn);
+	spin_lock_init(&rq_lock);
+	rq_info.rq_poll_jiffies = DEFAULT_RQ_POLL_JIFFIES;
+	rq_info.def_timer_jiffies = DEFAULT_DEF_TIMER_JIFFIES;
+	rq_info.def_start_time = ktime_to_ns(ktime_get());
+	rq_info.rq_poll_last_jiffy = 0;
+	rq_info.def_timer_last_jiffy = 0;
+	rq_info.hotplug_disabled = 0;
+	rq_info.init = 1;
 
 	was_paused = true;
 	last_time = ktime_to_ms(ktime_get());
